@@ -5,3 +5,4 @@ node_modules/
 messages.log
 slack-uploads/
 slack-outputs/
+.claude/settings.local.json
