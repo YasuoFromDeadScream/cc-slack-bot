@@ -10,6 +10,12 @@ const CLAUDE_EXTRA_ARGS = (process.env.CLAUDE_EXTRA_ARGS || '')
   .split(' ')
   .map((s) => s.trim())
   .filter(Boolean);
+const SLACK_USER_WHITELIST = new Set(
+  (process.env.SLACK_USER_WHITELIST || '')
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
 const UPLOAD_DIR = path.resolve(CLAUDE_CWD, 'slack-uploads');
 const OUTPUT_DIR = path.resolve(CLAUDE_CWD, 'slack-outputs');
 const LOG_FILE = path.resolve(CLAUDE_CWD, 'messages.log');
@@ -43,6 +49,33 @@ const sessions = new Map();
 function threadKey(event) {
   const thread = event.thread_ts || event.ts;
   return `${event.channel}:${thread}`;
+}
+
+function isSlackUserAllowed(userId) {
+  if (!userId) return false;
+  if (SLACK_USER_WHITELIST.size === 0) return true;
+  return SLACK_USER_WHITELIST.has(userId);
+}
+
+async function rejectDisallowedUser(client, event) {
+  const thread_ts = event.thread_ts || event.ts;
+  const text = ':no_entry: この bot は許可されたユーザーのみ利用できます。';
+
+  logEvent('user_blocked', {
+    channel: event.channel,
+    thread_ts,
+    user: event.user,
+  });
+
+  try {
+    await client.chat.postMessage({
+      channel: event.channel,
+      thread_ts,
+      text,
+    });
+  } catch (e) {
+    console.error('postMessage(blocked) failed:', e.message);
+  }
 }
 
 function safeName(name) {
@@ -198,6 +231,11 @@ function runClaude(prompt, sessionId, systemPrompt) {
 }
 
 async function handleUserMessage({ event, say, client }) {
+  if (!isSlackUserAllowed(event.user)) {
+    await rejectDisallowedUser(client, event);
+    return;
+  }
+
   const rawText = (event.text || '').replace(/<@[^>]+>\s*/g, '').trim();
   const files = Array.isArray(event.files) ? event.files : [];
   if (!rawText && files.length === 0) return;
@@ -309,9 +347,19 @@ app.message(async (args) => {
 
 (async () => {
   await app.start();
-  logEvent('startup', { cwd: CLAUDE_CWD, claude_bin: CLAUDE_BIN });
+  logEvent('startup', {
+    cwd: CLAUDE_CWD,
+    claude_bin: CLAUDE_BIN,
+    slack_user_whitelist_enabled: SLACK_USER_WHITELIST.size > 0,
+    slack_user_whitelist_count: SLACK_USER_WHITELIST.size,
+  });
   console.log(`Slack bot running (Socket Mode). claude="${CLAUDE_BIN}" cwd="${CLAUDE_CWD}"`);
   console.log(`Uploads dir: ${UPLOAD_DIR}`);
   console.log(`Outputs dir: ${OUTPUT_DIR}`);
   console.log(`Log file:    ${LOG_FILE}`);
+  if (SLACK_USER_WHITELIST.size > 0) {
+    console.log(`Allowed Slack users: ${SLACK_USER_WHITELIST.size}`);
+  } else {
+    console.log('Allowed Slack users: all');
+  }
 })();

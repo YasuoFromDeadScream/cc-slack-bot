@@ -55,6 +55,14 @@ cp .env.example .env
 # .env を編集してトークンを書く
 ```
 
+特定ユーザーだけに bot を使わせたい場合は、`.env` に `SLACK_USER_WHITELIST` を追加します。
+
+```bash
+SLACK_USER_WHITELIST=U01234567,U08999999
+```
+
+カンマ区切りまたは空白区切りで複数指定できます。未設定のままなら全ユーザー許可です。
+
 ### 4. 起動
 
 ```bash
@@ -83,6 +91,7 @@ pnpm dev
 | `CLAUDE_BIN` |  | claude CLI のパス（デフォルト: PATH の `claude`） |
 | `CLAUDE_CWD` |  | Claude Code の作業ディレクトリ |
 | `CLAUDE_EXTRA_ARGS` |  | 追加引数（例: `--model sonnet`） |
+| `SLACK_USER_WHITELIST` |  | 許可する Slack user ID 一覧。カンマ区切りまたは空白区切り。未設定時は全ユーザー許可 |
 
 ## セキュリティ
 
