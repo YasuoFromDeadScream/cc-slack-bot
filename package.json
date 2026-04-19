@@ -1,0 +1,24 @@
+{
+  "name": "my-first-slack-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Slack bot that talks to Claude Code",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "audit": "pnpm audit --audit-level=moderate"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.22.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=10"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+}

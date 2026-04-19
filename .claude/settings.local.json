@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/takei/.claude/projects/c--Users-takei-my-first-slack-bot/memory/**)",
+      "Bash(npm --version)",
+      "Bash(claude --version)",
+      "Bash(node -e \"require\\('./index.js'\\)\")",
+      "Bash(node index.js)",
+      "Bash(node -c index.js)",
+      "Bash(pnpm --version)",
+      "Bash(corepack --version)",
+      "Bash(corepack use *)",
+      "Bash(rm -rf node_modules)",
+      "Bash(pnpm install *)",
+      "Bash(corepack pnpm *)",
+      "Bash(where pnpm *)",
+      "Bash(where corepack *)",
+      "Bash(volta --version)",
+      "Bash(volta list *)",
+      "Read(//c/Users/takei/**)",
+      "Bash(bash -i -c 'pnpm --version')"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\takei"
+    ]
+  }
+}
