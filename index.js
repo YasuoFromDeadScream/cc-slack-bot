@@ -199,10 +199,9 @@ function runClaude(prompt, sessionId, systemPrompt) {
         resolve({
           text: parsed.result ?? parsed.response ?? stdout,
           sessionId: parsed.session_id ?? null,
-          raw: parsed,
         });
       } catch {
-        resolve({ text: stdout.trim(), sessionId: null, raw: null });
+        resolve({ text: stdout.trim(), sessionId: null });
       }
     });
 
@@ -322,8 +321,6 @@ app.message(async (args) => {
 });
 
 (async () => {
-  await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
-  await fs.promises.mkdir(OUTPUT_DIR, { recursive: true });
   await app.start();
   logEvent('startup', { cwd: CLAUDE_CWD, claude_bin: CLAUDE_BIN });
   console.log(`Slack bot running (Socket Mode). claude="${CLAUDE_BIN}" cwd="${CLAUDE_CWD}"`);
