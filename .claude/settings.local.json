@@ -1,6 +1,10 @@
 {
   "permissions": {
-    "allow": [],
+    "allow": [
+      "Write(slack-outputs/**)",
+      "Write(**)",
+      "Bash(cat:*)"
+    ],
     "additionalDirectories": []
   }
 }

@@ -13,7 +13,18 @@ const CLAUDE_EXTRA_ARGS = (process.env.CLAUDE_EXTRA_ARGS || '')
 const UPLOAD_DIR = path.resolve(CLAUDE_CWD, 'slack-uploads');
 const OUTPUT_DIR = path.resolve(CLAUDE_CWD, 'slack-outputs');
 const LOG_FILE = path.resolve(CLAUDE_CWD, 'messages.log');
+const SETTINGS_LOCAL = path.resolve(CLAUDE_CWD, '.claude', 'settings.local.json');
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100MB
+
+function loadAllowedTools() {
+  try {
+    const raw = fs.readFileSync(SETTINGS_LOCAL, 'utf8');
+    const settings = JSON.parse(raw);
+    return (settings?.permissions?.allow ?? []).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 function logEvent(kind, data) {
   const line = JSON.stringify({ ts: new Date().toISOString(), kind, ...data }) + '\n';
@@ -160,15 +171,17 @@ async function uploadOutputsToSlack(client, channel, thread_ts, files) {
 
 function runClaude(prompt, sessionId, systemPrompt) {
   return new Promise((resolve, reject) => {
-    const args = ['-p', '--output-format', 'json', ...CLAUDE_EXTRA_ARGS];
+    const allowedTools = loadAllowedTools();
+    const args = ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits', '--setting-sources', 'user,project,local', ...CLAUDE_EXTRA_ARGS];
+    if (allowedTools.length > 0) args.push('--allowedTools', allowedTools.join(' '));
     if (systemPrompt) args.push('--append-system-prompt', systemPrompt);
     if (sessionId) args.push('--resume', sessionId);
-    args.push(prompt);
 
     const child = spawn(CLAUDE_BIN, args, {
       cwd: CLAUDE_CWD,
-      shell: process.platform === 'win32',
+      shell: false,
       windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let stdout = '';
@@ -192,6 +205,9 @@ function runClaude(prompt, sessionId, systemPrompt) {
         resolve({ text: stdout.trim(), sessionId: null, raw: null });
       }
     });
+
+    child.stdin.write(prompt, 'utf8');
+    child.stdin.end();
   });
 }
 
@@ -239,7 +255,7 @@ async function handleUserMessage({ event, say, client }) {
     const outputDir = path.join(OUTPUT_DIR, thread_ts);
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    const systemPrompt = buildSystemPrompt(outputDir);
+    const systemPrompt = buildSystemPrompt(outputDir.replace(/\\/g, '/'));
     const userPrompt = buildUserPrompt(rawText, downloaded);
     const prior = sessions.get(key);
     const runStartedAt = Date.now();
