@@ -1,4 +1,4 @@
-# my-first-slack-bot
+# ClaudeCode と連携する SlackBot
 
 ローカルで動く Slack bot。メッセージを受けると Claude Code CLI (`claude -p`) に渡して、その応答を返します。
 
