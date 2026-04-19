@@ -109,3 +109,8 @@ pnpm dev
 pnpm audit
 pnpm outdated   # 古くなっている依存の確認
 ```
+
+## 工夫したポイント
+
+- `SLACK_USER_WHITELIST` を追加し、指定した Slack user ID のみ利用できるようにした
+
