@@ -84,6 +84,7 @@ pnpm dev
 - bot は同じスレッドで応答し、スレッド内では会話履歴が保持されます
 - **スレッド途中から呼ばれても文脈を読みます** — そのスレッドで bot がまだ応答していない状態でメンションされた場合、`conversations.replies` で過去のやり取りを取得し、プロンプトに注入した上で Claude Code に渡します（2回目以降は `claude --resume` でセッション継続するので再取得しません）
 - **チャンネルへのブロードキャスト** — メッセージに `send reply to this channel` という文言を含めると、返信が `reply_broadcast: true` で投稿され、スレッド外のチャンネルタイムラインにも表示されます（大文字小文字問わず）
+- **フレーズで作業ディレクトリを切り替え** — `CLAUDE_CWD_MAP` にフレーズ→ディレクトリの対応を書いておくと、**スレッド初回メッセージ** にそのフレーズが含まれる場合、Claude Code の cwd（および `slack-uploads/` `slack-outputs/` の配置先）が切り替わります。cwd はスレッド単位で固定され、同じスレッド内の 2 回目以降のメッセージでは phrase に関わらず同じ cwd を使い続けます（途中で別 cwd に切り替わって Claude のセッションが迷子になるのを防ぐため）。該当フレーズがなければ `CLAUDE_CWD` のまま。Windows パスは `C:/Users/...` のようにフォワードスラッシュで書くのが簡単です（バックスラッシュを使う場合は `.env` 上で 4 つ重ねる必要があります）
 
 ## 環境変数
 
@@ -93,7 +94,8 @@ pnpm dev
 | `SLACK_APP_TOKEN` | ✓ | `xapp-...`（Socket Mode 用） |
 | `SLACK_SIGNING_SECRET` | ✓ | Basic Information にある Signing Secret |
 | `CLAUDE_BIN` |  | claude CLI のパス（デフォルト: PATH の `claude`） |
-| `CLAUDE_CWD` |  | Claude Code の作業ディレクトリ |
+| `CLAUDE_CWD` |  | Claude Code の作業ディレクトリ（デフォルト） |
+| `CLAUDE_CWD_MAP` |  | スレッド初回メッセージのフレーズで cwd を切り替える JSON 配列。例: `[{"phrase":"動画編集","cwd":"C:/path/to/video"}]`。上から順に評価し、最初に一致した phrase の cwd を使う。該当なしは `CLAUDE_CWD`。一度決まった cwd はそのスレッドでは固定 |
 | `CLAUDE_EXTRA_ARGS` |  | 追加引数（例: `--model sonnet`） |
 | `SLACK_USER_WHITELIST` |  | 許可する Slack user ID 一覧。カンマ区切りまたは空白区切り。未設定時は全ユーザー許可 |
 

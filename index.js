@@ -16,8 +16,40 @@ const SLACK_USER_WHITELIST = new Set(
     .map((s) => s.trim())
     .filter(Boolean)
 );
-const UPLOAD_DIR = path.resolve(CLAUDE_CWD, 'slack-uploads');
-const OUTPUT_DIR = path.resolve(CLAUDE_CWD, 'slack-outputs');
+
+function parseCwdMap(raw) {
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    console.error(`CLAUDE_CWD_MAP parse failed: ${e.message} — ignoring`);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    console.error('CLAUDE_CWD_MAP must be a JSON array — ignoring');
+    return [];
+  }
+  const out = [];
+  for (const entry of parsed) {
+    if (entry && typeof entry.phrase === 'string' && entry.phrase && typeof entry.cwd === 'string' && entry.cwd) {
+      out.push({ phrase: entry.phrase, cwd: entry.cwd });
+    } else {
+      console.error(`CLAUDE_CWD_MAP: skipping invalid entry ${JSON.stringify(entry)}`);
+    }
+  }
+  return out;
+}
+const CLAUDE_CWD_MAP = parseCwdMap(process.env.CLAUDE_CWD_MAP);
+
+function resolveCwd(text) {
+  if (!text || CLAUDE_CWD_MAP.length === 0) return CLAUDE_CWD;
+  for (const entry of CLAUDE_CWD_MAP) {
+    if (text.includes(entry.phrase)) return entry.cwd;
+  }
+  return CLAUDE_CWD;
+}
+
 const LOG_FILE = path.resolve(CLAUDE_CWD, 'messages.log');
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100MB
 
@@ -45,6 +77,8 @@ const app = new App({
 
 // threadKey -> claude session_id
 const sessions = new Map();
+// threadKey -> スレッド初回に決まった cwd（以降そのスレッドでは固定）
+const threadCwds = new Map();
 // auth.test で起動時に埋める
 let botUserId = null;
 
@@ -141,8 +175,8 @@ async function downloadSlackFile(file, destDir) {
   return fpath;
 }
 
-async function downloadFiles(files, threadTs) {
-  const destDir = path.join(UPLOAD_DIR, threadTs);
+async function downloadFiles(files, threadTs, uploadDir) {
+  const destDir = path.join(uploadDir, threadTs);
   await fs.promises.mkdir(destDir, { recursive: true });
   const results = [];
   for (const f of files) {
@@ -238,14 +272,14 @@ async function uploadOutputsToSlack(client, channel, thread_ts, files) {
   return results;
 }
 
-function runClaude(prompt, sessionId, systemPrompt) {
+function runClaude(prompt, sessionId, systemPrompt, cwd) {
   return new Promise((resolve, reject) => {
     const args = ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits', '--setting-sources', 'user,project,local', ...CLAUDE_EXTRA_ARGS];
     if (systemPrompt) args.push('--append-system-prompt', systemPrompt);
     if (sessionId) args.push('--resume', sessionId);
 
     const child = spawn(CLAUDE_BIN, args, {
-      cwd: CLAUDE_CWD,
+      cwd,
       shell: false,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -289,6 +323,13 @@ async function handleUserMessage({ event, say, client }) {
 
   const key = threadKey(event);
   const thread_ts = event.thread_ts || event.ts;
+  let cwd = threadCwds.get(key);
+  if (!cwd) {
+    cwd = resolveCwd(rawText);
+    threadCwds.set(key, cwd);
+  }
+  const uploadDir = path.resolve(cwd, 'slack-uploads');
+  const outputBaseDir = path.resolve(cwd, 'slack-outputs');
 
   let thinking;
   try {
@@ -316,14 +357,14 @@ async function handleUserMessage({ event, say, client }) {
   try {
     let downloaded = [];
     if (files.length > 0) {
-      downloaded = await downloadFiles(files, thread_ts);
+      downloaded = await downloadFiles(files, thread_ts, uploadDir);
       logEvent('files_downloaded', {
         thread_ts,
         files: downloaded.map((d) => ({ ok: d.ok, name: d.name, path: d.path, error: d.error })),
       });
     }
 
-    const outputDir = path.join(OUTPUT_DIR, thread_ts);
+    const outputDir = path.join(outputBaseDir, thread_ts);
     await fs.promises.mkdir(outputDir, { recursive: true });
 
     const prior = sessions.get(key);
@@ -346,7 +387,7 @@ async function handleUserMessage({ event, say, client }) {
     const systemPrompt = buildSystemPrompt(outputDir.replace(/\\/g, '/'));
     const userPrompt = buildUserPrompt(rawText, downloaded, threadContext);
     const runStartedAt = Date.now();
-    const { text: reply, sessionId } = await runClaude(userPrompt, prior, systemPrompt);
+    const { text: reply, sessionId } = await runClaude(userPrompt, prior, systemPrompt, cwd);
     if (sessionId) sessions.set(key, sessionId);
 
     const body = reply && reply.length > 0 ? reply : '(応答が空でした)';
@@ -357,6 +398,7 @@ async function handleUserMessage({ event, say, client }) {
       session_id: sessionId,
       duration_ms: Date.now() - runStartedAt,
       broadcast,
+      cwd,
       text: body,
     });
 
@@ -435,15 +477,22 @@ app.message(async (args) => {
   }
   logEvent('startup', {
     cwd: CLAUDE_CWD,
+    cwd_map: CLAUDE_CWD_MAP,
     claude_bin: CLAUDE_BIN,
     bot_user_id: botUserId,
     slack_user_whitelist_enabled: SLACK_USER_WHITELIST.size > 0,
     slack_user_whitelist_count: SLACK_USER_WHITELIST.size,
   });
   console.log(`Slack bot running (Socket Mode). claude="${CLAUDE_BIN}" cwd="${CLAUDE_CWD}"`);
-  console.log(`Uploads dir: ${UPLOAD_DIR}`);
-  console.log(`Outputs dir: ${OUTPUT_DIR}`);
+  console.log(`Uploads dir: ${path.resolve(CLAUDE_CWD, 'slack-uploads')}`);
+  console.log(`Outputs dir: ${path.resolve(CLAUDE_CWD, 'slack-outputs')}`);
   console.log(`Log file:    ${LOG_FILE}`);
+  if (CLAUDE_CWD_MAP.length > 0) {
+    console.log(`CWD phrase map (${CLAUDE_CWD_MAP.length}):`);
+    for (const e of CLAUDE_CWD_MAP) {
+      console.log(`  "${e.phrase}" -> ${e.cwd}`);
+    }
+  }
   if (SLACK_USER_WHITELIST.size > 0) {
     console.log(`Allowed Slack users: ${SLACK_USER_WHITELIST.size}`);
   } else {
