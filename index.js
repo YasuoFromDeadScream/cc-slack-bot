@@ -45,10 +45,54 @@ const app = new App({
 
 // threadKey -> claude session_id
 const sessions = new Map();
+// auth.test で起動時に埋める
+let botUserId = null;
+
+const THREAD_HISTORY_LIMIT = 100;
+const THREAD_MESSAGE_CHAR_LIMIT = 2000;
 
 function threadKey(event) {
   const thread = event.thread_ts || event.ts;
   return `${event.channel}:${thread}`;
+}
+
+async function fetchThreadHistory(client, channel, thread_ts, currentTs) {
+  try {
+    const res = await client.conversations.replies({
+      channel,
+      ts: thread_ts,
+      limit: THREAD_HISTORY_LIMIT,
+    });
+    const messages = Array.isArray(res.messages) ? res.messages : [];
+    return messages.filter((m) => m.ts !== currentTs);
+  } catch (e) {
+    console.error('conversations.replies failed:', e.message);
+    return [];
+  }
+}
+
+function formatThreadHistory(messages) {
+  if (!messages || messages.length === 0) return '';
+  const lines = [
+    '<thread_context>',
+    'このスレッドには既に以下のやり取りがあります。文脈として参照してください（あなた自身の過去の発言は [assistant]、他ユーザーの発言は [user:<id>]）。',
+    '',
+  ];
+  let added = 0;
+  for (const m of messages) {
+    const raw = (m.text || '').replace(/<@[^>]+>\s*/g, '').trim();
+    if (!raw) continue;
+    const text = raw.length > THREAD_MESSAGE_CHAR_LIMIT
+      ? raw.slice(0, THREAD_MESSAGE_CHAR_LIMIT) + '…(省略)'
+      : raw;
+    const isAssistant = (botUserId && m.user === botUserId) || Boolean(m.bot_id);
+    const who = isAssistant ? 'assistant' : `user:${m.user || 'unknown'}`;
+    lines.push(`[${who}]: ${text}`);
+    added++;
+  }
+  if (added === 0) return '';
+  lines.push('</thread_context>', '');
+  return lines.join('\n');
 }
 
 function isSlackUserAllowed(userId) {
@@ -123,8 +167,11 @@ function buildSystemPrompt(outputDir) {
   ].join('\n');
 }
 
-function buildUserPrompt(userText, downloaded) {
+function buildUserPrompt(userText, downloaded, threadContext) {
   const lines = [];
+  if (threadContext) {
+    lines.push(threadContext);
+  }
   if (downloaded && downloaded.length > 0) {
     lines.push('<attachments>');
     for (const d of downloaded) {
@@ -279,9 +326,25 @@ async function handleUserMessage({ event, say, client }) {
     const outputDir = path.join(OUTPUT_DIR, thread_ts);
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    const systemPrompt = buildSystemPrompt(outputDir.replace(/\\/g, '/'));
-    const userPrompt = buildUserPrompt(rawText, downloaded);
     const prior = sessions.get(key);
+
+    // スレッドの途中で初めて呼ばれた場合は、過去のやり取りをプロンプトに注入する。
+    // session を既に持っている場合は --resume で継続するので再取得は不要。
+    let threadContext = '';
+    const isThreadReply = event.thread_ts && event.thread_ts !== event.ts;
+    if (!prior && isThreadReply) {
+      const history = await fetchThreadHistory(client, event.channel, event.thread_ts, event.ts);
+      threadContext = formatThreadHistory(history);
+      logEvent('thread_history_loaded', {
+        channel: event.channel,
+        thread_ts,
+        message_count: history.length,
+        included: threadContext ? true : false,
+      });
+    }
+
+    const systemPrompt = buildSystemPrompt(outputDir.replace(/\\/g, '/'));
+    const userPrompt = buildUserPrompt(rawText, downloaded, threadContext);
     const runStartedAt = Date.now();
     const { text: reply, sessionId } = await runClaude(userPrompt, prior, systemPrompt);
     if (sessionId) sessions.set(key, sessionId);
@@ -364,9 +427,16 @@ app.message(async (args) => {
 
 (async () => {
   await app.start();
+  try {
+    const auth = await app.client.auth.test({ token: process.env.SLACK_BOT_TOKEN });
+    botUserId = auth.user_id || null;
+  } catch (e) {
+    console.error('auth.test failed:', e.message);
+  }
   logEvent('startup', {
     cwd: CLAUDE_CWD,
     claude_bin: CLAUDE_BIN,
+    bot_user_id: botUserId,
     slack_user_whitelist_enabled: SLACK_USER_WHITELIST.size > 0,
     slack_user_whitelist_count: SLACK_USER_WHITELIST.size,
   });

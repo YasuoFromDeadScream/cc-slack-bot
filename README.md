@@ -42,6 +42,8 @@ pnpm install
   - `im:write`
   - `files:read` ← ファイル添付を扱う場合に必須
   - `files:write` ← Claude が生成したファイルを返す場合に必須
+  - `channels:history` ← パブリックチャンネル内でスレッド途中から呼ばれたときに履歴を読むため
+  - `groups:history` ← プライベートチャンネルで同上（使う場合のみ）
 - **Event Subscriptions**: ON、Subscribe to bot events:
   - `app_mention`
   - `message.im`
@@ -80,6 +82,7 @@ pnpm dev
 - **ファイル添付も OK** — 画像・テキスト・コード等を付けると `slack-uploads/<thread_ts>/` にダウンロードされ、そのローカルパスをプロンプトに含めて Claude Code に渡します（Claude 側で Read tool で読み込めます）
 - **Claude からのファイル返却も OK** — プロンプトで `OUTPUT_DIR` を伝えるので、Claude がそこに書き出したファイルは自動で Slack にアップロードされます（100MB 超はスキップ）
 - bot は同じスレッドで応答し、スレッド内では会話履歴が保持されます
+- **スレッド途中から呼ばれても文脈を読みます** — そのスレッドで bot がまだ応答していない状態でメンションされた場合、`conversations.replies` で過去のやり取りを取得し、プロンプトに注入した上で Claude Code に渡します（2回目以降は `claude --resume` でセッション継続するので再取得しません）
 - **チャンネルへのブロードキャスト** — メッセージに `send reply to this channel` という文言を含めると、返信が `reply_broadcast: true` で投稿され、スレッド外のチャンネルタイムラインにも表示されます（大文字小文字問わず）
 
 ## 環境変数
