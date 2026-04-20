@@ -287,15 +287,32 @@ async function handleUserMessage({ event, say, client }) {
     if (sessionId) sessions.set(key, sessionId);
 
     const body = reply && reply.length > 0 ? reply : '(応答が空でした)';
+    const broadcast = /send reply to this channel/i.test(rawText);
     logEvent('claude_response', {
       channel: event.channel,
       thread_ts,
       session_id: sessionId,
       duration_ms: Date.now() - runStartedAt,
+      broadcast,
       text: body,
     });
 
-    if (thinking?.ts) {
+    if (broadcast) {
+      // chat.update does not support reply_broadcast — delete the placeholder and post fresh.
+      if (thinking?.ts) {
+        try {
+          await client.chat.delete({ channel: event.channel, ts: thinking.ts });
+        } catch (e) {
+          console.error('chat.delete(thinking) failed:', e.message);
+        }
+      }
+      await client.chat.postMessage({
+        channel: event.channel,
+        thread_ts,
+        text: body,
+        reply_broadcast: true,
+      });
+    } else if (thinking?.ts) {
       await client.chat.update({
         channel: event.channel,
         ts: thinking.ts,
