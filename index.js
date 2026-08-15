@@ -274,7 +274,7 @@ async function uploadOutputsToSlack(client, channel, thread_ts, files) {
 
 function runClaude(prompt, sessionId, systemPrompt, cwd) {
   return new Promise((resolve, reject) => {
-    const args = ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits', '--setting-sources', 'user,project,local', ...CLAUDE_EXTRA_ARGS];
+    const args = ['-p', '--output-format', 'json', '--permission-mode', 'bypassPermissions', '--setting-sources', 'user,project,local', ...CLAUDE_EXTRA_ARGS];
     if (systemPrompt) args.push('--append-system-prompt', systemPrompt);
     if (sessionId) args.push('--resume', sessionId);
 
